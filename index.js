@@ -22,6 +22,7 @@ export async function connectToMongoDB() {
 const connectedClient = await connectToMongoDB()
 const db = connectedClient.db("SalonBook")
 const services = db.collection('services')
+const appointments = db.collection('appointments')
 
 app.get('/', (req, res)=>{
     res.send('server is running')
@@ -40,6 +41,36 @@ app.get('/services/:id', async (req, res) => {
   const result = await services.findOne(query)
   res.send(result)
 })
+
+// app.post('/appointment', async(req, res)=>{
+//   const appointment = req.body;
+//   const result = await appointments.insertOne(appointment)
+//   res.send(result)
+// })
+app.post("/appointment", async (req, res) => {
+  try {
+    console.log("Received appointment:", req.body);
+
+    const appointment = req.body;
+
+    const result = await appointments.insertOne(appointment);
+
+    console.log("MongoDB result:", result);
+
+    res.status(201).send({
+      success: true,
+      message: "Appointment booked successfully",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Appointment error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: error.message,
+    });
+  }
+});
 
 
 app.listen(port, ()=>{
