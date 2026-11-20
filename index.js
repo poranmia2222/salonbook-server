@@ -90,6 +90,19 @@ app.post("/appointment", async (req, res) => {
 });
 
 
+app.delete('/appointment/:id', async (req, res) => {
+  const id = req.params.id;
+
+  const query = {
+    _id: new ObjectId(id)
+  };
+
+  const result = await appointments.deleteOne(query);
+
+  res.send(result);
+});
+
+
 app.listen(port, ()=>{
     console.log(`you server is running on port ${port}`)
 })
