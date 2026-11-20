@@ -42,6 +42,23 @@ app.get('/services/:id', async (req, res) => {
   res.send(result)
 })
 
+
+
+app.get('/appointments', async (req, res) => {
+  const query = {};
+  if (req.query.applicantId) {
+    query.userId = req.query.applicantId
+  }
+  // if(req.query.jobId){
+  //   query.jobId = req.query.jobId
+  // }
+  const cursor = appointments.find(query)
+  const result = await cursor.toArray()
+  res.send(result)
+})
+
+
+
 // app.post('/appointment', async(req, res)=>{
 //   const appointment = req.body;
 //   const result = await appointments.insertOne(appointment)
