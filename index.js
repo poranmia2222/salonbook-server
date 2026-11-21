@@ -28,18 +28,70 @@ const db = connectedClient.db("SalonBook");
 const services = db.collection('services');
 const appointments = db.collection('appointments');
 const users = db.collection('user');
+const sessions = db.collection('session');
 
 app.get('/', (req, res) => {
   res.send('server is running')
 })
 
-app.get('/users', async(req, res)=>{
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization
+  if (!authHeader) {
+    res.status(401).send({ message: 'Unauthorized' })
+    return
+  }
+  const token = authHeader.split(' ')[1]
+  if (!token) {
+    res.status(401).send({ message: 'Unauthorized' })
+    return
+  }
+  const query = { token }
+  const session = await sessions.findOne(query)
+
+  if (!session) {
+    res.status(401).send({ message: 'Unauthorized' })
+    return
+  }
+
+  const userId = session.userId
+  const userQuery = { _id: new ObjectId(userId) }
+  const user = await users.findOne(userQuery)
+  if (!user) {
+    res.status(401).send({ message: 'Unauthorized' })
+    return
+  }
+  req.user = user
+  next()
+
+}
+
+const verifyCustomer = async (req, res, next) => {
+  if (req.user.role !== 'customer') {
+    res.status(401).send({ message: "Forbidden" })
+    return
+  }
+  next()
+}
+
+
+const verifyAdmin = async (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    res.status(401).send({ message: "Forbidden" })
+    return
+  }
+  next()
+}
+
+
+
+app.get('/users',verifyToken,verifyAdmin, async (req, res) => {
   const cursor = users.find({})
   const result = await cursor.toArray()
   res.send(result)
 })
 
-app.post('/services', async (req, res) => {
+app.post('/services', verifyToken, verifyAdmin, async (req, res) => {
   const service = req.body;
   const result = await services.insertOne(service)
   res.send(result)
@@ -59,72 +111,39 @@ app.get('/services/:id', async (req, res) => {
 })
 
 
-app.patch('/services/:id', async (req, res) => {
-  const  id  = req.params.id
+app.patch('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+  const id = req.params.id
   const updatedService = req.body
   const result = await services.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updatedService }
-    )
+    { _id: new ObjectId(id) },
+    { $set: updatedService }
+  )
   res.send(result)
 })
 
-app.delete('/services/:id', async (req, res)=>{
-  const  id  = req.params.id
-  const query = {_id: new ObjectId(id)}
+app.delete('/services/:id', verifyToken, verifyAdmin, async (req, res) => {
+  const id = req.params.id
+  const query = { _id: new ObjectId(id) }
   const result = services.deleteOne(query)
   res.send(result)
 })
 
-
-app.get('/appointments', async (req, res) => {
+app.get('/appointments', verifyToken, async (req, res) => {
   const query = {};
+  // if (req.user.role === "admin") {
+  //     query = {};
+  //   }
   if (req.query.applicantId) {
     query.userId = req.query.applicantId
   }
-  // if(req.query.jobId){
-  //   query.jobId = req.query.jobId
-  // }
+
   const cursor = appointments.find(query)
   const result = await cursor.toArray()
   res.send(result)
 })
 
 
-
-// app.post('/appointment', async(req, res)=>{
-//   const appointment = req.body;
-//   const result = await appointments.insertOne(appointment)
-//   res.send(result)
-// })
-// app.post("/appointment", async (req, res) => {
-//   try {
-//     console.log("Received appointment:", req.body);
-
-//     const appointment = req.body;
-
-//     const result = await appointments.insertOne(appointment);
-
-//     console.log("MongoDB result:", result);
-
-//     res.status(201).send({
-//       success: true,
-//       message: "Appointment booked successfully",
-//       insertedId: result.insertedId,
-//     });
-//   } catch (error) {
-//     console.error("Appointment error:", error);
-
-//     res.status(500).send({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// });
-
-
-
-app.post("/appointment", async (req, res) => {
+app.post("/appointment", verifyToken, verifyCustomer, async (req, res) => {
   try {
     const appointment = req.body;
 
@@ -184,7 +203,7 @@ app.post("/appointment", async (req, res) => {
 
 
 
-app.patch('/appointment/:id', async (req, res) => {
+app.patch('/appointment/:id',verifyToken,verifyAdmin,  async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) }
   const updatedDoc = {
@@ -196,7 +215,7 @@ app.patch('/appointment/:id', async (req, res) => {
   res.send(result)
 })
 
-app.delete('/appointment/:id', async (req, res) => {
+app.delete('/appointment/:id',verifyToken, verifyCustomer, async (req, res) => {
   const id = req.params.id;
 
   const query = {
@@ -213,48 +232,55 @@ app.patch('/payments/checkout-verify', async (req, res) => {
   try {
     const { sessionId } = req.body;
 
-    // 1. Retrieve Stripe session
+    if (typeof sessionId !== 'string' || !sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'A checkout session ID is required',
+      });
+    }
+
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    // 2. Check payment
-    if (session.payment_status !== 'paid') {
-      return res.status(400).send({
+    if (session.mode !== 'payment' || session.payment_status !== 'paid') {
+      return res.status(400).json({
         success: false,
         message: 'Payment not completed',
       });
     }
 
-    // 3. Get appointment details from metadata
-    const { userId, appointmentId } = session.metadata;
+    const { userId, appointmentId } = session.metadata ?? {};
 
-    // 4. Update only the matching appointment
-    const result = await appointmentsCollection.updateOne(
-      {
-        _id: new ObjectId(appointmentId),
-        userId: userId,
-      },
-      {
-        $set: {
-          payment: "paid",
-        },
-      }
+    if (
+      !userId ||
+      !appointmentId ||
+      !ObjectId.isValid(appointmentId) ||
+      session.client_reference_id !== appointmentId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid appointment details in checkout session',
+      });
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(appointmentId), userId },
+      { $set: { payment: 'paid' } }
     );
 
     if (result.matchedCount === 0) {
-      return res.status(404).send({
+      return res.status(404).json({
         success: false,
         message: 'Appointment not found',
       });
     }
 
-    res.send({
+    return res.json({
       success: true,
       message: 'Appointment updated successfully',
     });
-
   } catch (error) {
-    console.error(error);
-    res.status(500).send({
+    console.error('Payment verification failed:', error);
+    return res.status(500).json({
       success: false,
       message: 'Payment verification failed',
     });
