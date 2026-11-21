@@ -68,12 +68,57 @@ app.get('/appointments', async (req, res) => {
 //   const result = await appointments.insertOne(appointment)
 //   res.send(result)
 // })
+// app.post("/appointment", async (req, res) => {
+//   try {
+//     console.log("Received appointment:", req.body);
+
+//     const appointment = req.body;
+
+//     const result = await appointments.insertOne(appointment);
+
+//     console.log("MongoDB result:", result);
+
+//     res.status(201).send({
+//       success: true,
+//       message: "Appointment booked successfully",
+//       insertedId: result.insertedId,
+//     });
+//   } catch (error) {
+//     console.error("Appointment error:", error);
+
+//     res.status(500).send({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// });
+
+
 app.post("/appointment", async (req, res) => {
   try {
     console.log("Received appointment:", req.body);
 
     const appointment = req.body;
 
+    const { serviceId, date, time } = appointment;
+
+    // 1. Check if the same service is already booked
+    const existingAppointment = await appointments.findOne({
+      serviceId,
+      date,
+      time,
+      status: { $ne: "cancelled" },
+    });
+
+    // 2. Reject duplicate booking
+    if (existingAppointment) {
+      return res.status(409).send({
+        success: false,
+        message: "This service is already booked at this date and time.",
+      });
+    }
+
+    // 3. Insert appointment
     const result = await appointments.insertOne(appointment);
 
     console.log("MongoDB result:", result);
@@ -83,8 +128,17 @@ app.post("/appointment", async (req, res) => {
       message: "Appointment booked successfully",
       insertedId: result.insertedId,
     });
+
   } catch (error) {
     console.error("Appointment error:", error);
+
+    // Duplicate key error
+    if (error.code === 11000) {
+      return res.status(409).send({
+        success: false,
+        message: "This time slot has already been booked.",
+      });
+    }
 
     res.status(500).send({
       success: false,
@@ -92,6 +146,7 @@ app.post("/appointment", async (req, res) => {
     });
   }
 });
+
 
 
 app.patch('/appointment/:id', async (req, res) => {
@@ -138,7 +193,7 @@ app.patch('/payments/checkout-verify', async (req, res) => {
     const { userId, appointmentId } = session.metadata;
 
     // 4. Update only the matching appointment
-    const result = await appointments.updateOne(
+    const result = await appointmentsCollection.updateOne(
       {
         _id: new ObjectId(appointmentId),
         userId: userId,
