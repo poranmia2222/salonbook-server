@@ -94,34 +94,47 @@ app.get('/appointments', async (req, res) => {
 // });
 
 
+
 app.post("/appointment", async (req, res) => {
   try {
-    console.log("Received appointment:", req.body);
-
     const appointment = req.body;
 
-    const { serviceId, date, time } = appointment;
+    const { serviceId, date, time, duration } = appointment;
 
-    // 1. Check if the same service is already booked
-    const existingAppointment = await appointments.findOne({
+    // Convert appointment time to minutes
+    const [hours, minutes] = time.split(":").map(Number);
+
+    const newStart = hours * 60 + minutes;
+    const newEnd = newStart + Number(duration);
+
+    // Get existing appointments for the same service and date
+    const existingAppointments = await appointments.find({
       serviceId,
       date,
-      time,
       status: { $ne: "cancelled" },
+    }).toArray();
+
+    // Check time overlap
+    const isAlreadyBooked = existingAppointments.some((item) => {
+      const [existingHours, existingMinutes] = item.time
+        .split(":")
+        .map(Number);
+
+      const existingStart = existingHours * 60 + existingMinutes;
+      const existingEnd = existingStart + Number(item.duration);
+
+      return newStart < existingEnd && newEnd > existingStart;
     });
 
-    // 2. Reject duplicate booking
-    if (existingAppointment) {
+    if (isAlreadyBooked) {
       return res.status(409).send({
         success: false,
-        message: "This service is already booked at this date and time.",
+        message: "This time slot is already booked. Please choose another time.",
       });
     }
 
-    // 3. Insert appointment
+    // Insert appointment
     const result = await appointments.insertOne(appointment);
-
-    console.log("MongoDB result:", result);
 
     res.status(201).send({
       success: true,
@@ -132,20 +145,13 @@ app.post("/appointment", async (req, res) => {
   } catch (error) {
     console.error("Appointment error:", error);
 
-    // Duplicate key error
-    if (error.code === 11000) {
-      return res.status(409).send({
-        success: false,
-        message: "This time slot has already been booked.",
-      });
-    }
-
     res.status(500).send({
       success: false,
       message: error.message,
     });
   }
 });
+
 
 
 
