@@ -32,9 +32,9 @@ app.get('/', (req, res) => {
   res.send('server is running')
 })
 
-app.post('/services', async(req, res)=>{
+app.post('/services', async (req, res) => {
   const service = req.body;
-  const result =await services.insertOne(service)
+  const result = await services.insertOne(service)
   res.send(result)
 })
 
@@ -51,6 +51,23 @@ app.get('/services/:id', async (req, res) => {
   res.send(result)
 })
 
+
+app.patch('/services/:id', async (req, res) => {
+  const  id  = req.params.id
+  const updatedService = req.body
+  const result = await services.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedService }
+    )
+  res.send(result)
+})
+
+app.delete('/services/:id', async (req, res)=>{
+  const  id  = req.params.id
+  const query = {_id: new ObjectId(id)}
+  const result = services.deleteOne(query)
+  res.send(result)
+})
 
 
 app.get('/appointments', async (req, res) => {
