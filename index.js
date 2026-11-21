@@ -2,6 +2,10 @@ import express from "express"
 import cors from 'cors'
 import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+
 const app = express()
 const port = process.env.PORT || 5000;
 app.use(express.json())
@@ -19,20 +23,20 @@ export async function connectToMongoDB() {
   }
 }
 
-const connectedClient = await connectToMongoDB()
-const db = connectedClient.db("SalonBook")
-const services = db.collection('services')
-const appointments = db.collection('appointments')
+const connectedClient = await connectToMongoDB();
+const db = connectedClient.db("SalonBook");
+const services = db.collection('services');
+const appointments = db.collection('appointments');
 
-app.get('/', (req, res)=>{
-    res.send('server is running')
+app.get('/', (req, res) => {
+  res.send('server is running')
 })
 
 
-app.get('/services', async(req, res)=>{
-    const cursor = services.find({});
-    const result = await cursor.toArray()
-    res.send(result)
+app.get('/services', async (req, res) => {
+  const cursor = services.find({});
+  const result = await cursor.toArray()
+  res.send(result)
 })
 
 app.get('/services/:id', async (req, res) => {
@@ -90,11 +94,11 @@ app.post("/appointment", async (req, res) => {
 });
 
 
-app.patch('/appointment/:id', async(req, res)=>{
+app.patch('/appointment/:id', async (req, res) => {
   const id = req.params.id;
-  const query = {_id: new ObjectId(id)}
+  const query = { _id: new ObjectId(id) }
   const updatedDoc = {
-    $set:{
+    $set: {
       status: req.body.status
     }
   }
@@ -115,6 +119,59 @@ app.delete('/appointment/:id', async (req, res) => {
 });
 
 
-app.listen(port, ()=>{
-    console.log(`you server is running on port ${port}`)
+app.patch('/payments/checkout-verify', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    // 1. Retrieve Stripe session
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    // 2. Check payment
+    if (session.payment_status !== 'paid') {
+      return res.status(400).send({
+        success: false,
+        message: 'Payment not completed',
+      });
+    }
+
+    // 3. Get appointment details from metadata
+    const { userId, appointmentId } = session.metadata;
+
+    // 4. Update only the matching appointment
+    const result = await appointments.updateOne(
+      {
+        _id: new ObjectId(appointmentId),
+        userId: userId,
+      },
+      {
+        $set: {
+          payment: "paid",
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: 'Appointment not found',
+      });
+    }
+
+    res.send({
+      success: true,
+      message: 'Appointment updated successfully',
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      success: false,
+      message: 'Payment verification failed',
+    });
+  }
+});
+
+
+app.listen(port, () => {
+  console.log(`you server is running on port ${port}`)
 })
