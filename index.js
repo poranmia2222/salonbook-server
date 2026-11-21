@@ -27,9 +27,16 @@ const connectedClient = await connectToMongoDB();
 const db = connectedClient.db("SalonBook");
 const services = db.collection('services');
 const appointments = db.collection('appointments');
+const users = db.collection('user');
 
 app.get('/', (req, res) => {
   res.send('server is running')
+})
+
+app.get('/users', async(req, res)=>{
+  const cursor = users.find({})
+  const result = await cursor.toArray()
+  res.send(result)
 })
 
 app.post('/services', async (req, res) => {
