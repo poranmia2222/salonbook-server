@@ -32,6 +32,11 @@ app.get('/', (req, res) => {
   res.send('server is running')
 })
 
+app.post('/services', async(req, res)=>{
+  const service = req.body;
+  const result =await services.insertOne(service)
+  res.send(result)
+})
 
 app.get('/services', async (req, res) => {
   const cursor = services.find({});
